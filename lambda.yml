@@ -1,0 +1,111 @@
+Parameters:
+  SNSEndpoint: 
+    Description: Email address for sns topic subscription
+    Type: String
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: 
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: S3GetObject
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: Allow
+                Action: 
+                  - 's3:GetObject'
+                Resource: 'arn:aws:s3:::*'
+                    
+        - PolicyName: AllowLogging
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:  
+                  - 'logs:*'
+                Resource: 'arn:aws:logs:*'
+        
+        - PolicyName: AllowSNS
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'sns:Publish'
+                Resource: 'arn:aws:sns:*'
+  
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: s3-get-object-function
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.8
+      Code:
+        ZipFile: |
+          import json
+          import urllib.parse
+          import boto3
+
+          print('Loading function')
+
+          s3 = boto3.client('s3')
+
+
+          def lambda_handler(event, context):
+
+              # Get the object from the event and show its content type
+              bucket = event['Records'][0]['s3']['bucket']['name']
+              key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
+              try:
+                  response = s3.get_object(Bucket=bucket, Key=key)
+                  print("CONTENT TYPE: " + response['ContentType'])
+                  return response['ContentType']
+              except Exception as e:
+                  print(e)
+                  print('Error getting object {} from bucket {}. Make sure they exist and your bucket is in the same region as this function.'.format(key, bucket))
+                  raise e
+      Handler: index.lambda_handler
+        
+  
+  LambdaSNS:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: Lambda-success
+
+  SnsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties: 
+      Protocol: email
+      Endpoint: !Ref SNSEndpoint
+      TopicArn: !Ref LambdaSNS
+
+  LambdaInvokeSNS:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      DestinationConfig:
+        OnSuccess:
+          Destination: !Ref LambdaSNS
+      FunctionName: !Ref LambdaFunction
+      Qualifier: $LATEST
+
+
+Outputs:
+  LambdaFunction:
+    Description: Name of the lambda function
+    Value:
+      Fn::GetAtt:
+        - LambdaFunction
+        - Arn
+    Export:
+      Name: LambdaFunctionArn
