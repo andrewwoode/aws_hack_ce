@@ -1,0 +1,29 @@
+Parameters:
+  BucketName:
+    Description: Unique name for s3 bucket
+    Type: String
+Resources:
+  LambdaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: true
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !ImportValue LambdaFunctionArn
+
+  LambdaBucketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !ImportValue LambdaFunctionArn
+      Principal: s3.amazonaws.com
+      SourceArn: 
+        Fn::GetAtt:
+          - LambdaBucket
+          - Arn
